@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -370,6 +371,7 @@ vector<unsigned> primes;
  */
 void init_primes(unsigned bound)
 {
+    primes.clear();
     vector<bool> del(bound + 1, 0);
     for (unsigned i = 2; i <= bound; i++) {
         if (!del[i]) primes.push_back(i);
@@ -423,6 +425,7 @@ void dixon_factorize(const LargeInteger& inp, unsigned num_threads)
 {
     unsigned bound = inp.get_dixon_bound();
     init_primes(bound);
+    generators.clear();
     generators.reserve(primes.size() + 1);
 
     vector<thread> threads(num_threads);
@@ -433,10 +436,20 @@ void dixon_factorize(const LargeInteger& inp, unsigned num_threads)
 
 int main()
 {
-    auto t1 = chrono::high_resolution_clock::now();
-    dixon_factorize(string("123434478345458574"), 1);
-    auto t2 = chrono::high_resolution_clock::now();
-    cout << chrono::duration_cast<chrono::microseconds>(t2 - t1).count() << endl;
+
+    vector<string> strong_scaling_inputs = {"1562231977579368539", "1562296073671438841", "1563027922682626513", "1563332626264319233", "1563811602917980387"};
+    ofstream fout("strong.out");
+    for (const auto& s : strong_scaling_inputs) {
+        for (unsigned num_cores = 1; num_cores <= 30; num_cores++) {
+            auto t1 = chrono::high_resolution_clock::now();
+            dixon_factorize(s, num_cores);
+            auto t2 = chrono::high_resolution_clock::now();
+            fout << chrono::duration_cast<chrono::microseconds>(t2 - t1).count();
+            cout << chrono::duration_cast<chrono::microseconds>(t2 - t1).count();
+            num_cores == 30 ? fout << endl : fout << '\t';
+            num_cores == 30 ? cout << endl : cout << '\t';
+        }
+    }
     return 0;
 }
 
