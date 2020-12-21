@@ -5,6 +5,7 @@
 #include <cassert>
 #include <thread>
 #include <mutex>
+#include <chrono>
 
 using namespace std;
 
@@ -88,6 +89,35 @@ struct LargeInteger
         for (unsigned i = d; i < maxn; i++)
             ret.n[i - d] = n[i];
         return ret;
+    }
+
+    LargeInteger& operator>>=(unsigned shift)
+    {
+        if (shift >= maxn << 6) {
+            memset(n, 0, sizeof(ull) * maxn);
+            return *this;
+        }
+
+        unsigned d = shift >> 6, r = shift & 63;
+        if (r) {
+            unsigned l = 64 - r;
+            for (unsigned i = d; i < maxn - 1; i++)
+                n[i - d] = n[i] >> r | n[i + 1] << l;
+            n[maxn - 1 - d] = n[maxn - 1] >> r;
+        }
+        else {
+            for (unsigned i = d; i < maxn; i++)
+                n[i - d] = n[i];
+        }
+        memset(n + maxn - d, 0, sizeof(ull) * d);
+        return *this;
+    }
+
+    bool is_zero() const
+    {
+        for (unsigned i = 0; i < maxn; i++)
+            if (n[i]) return false;
+        return true;
     }
 
     friend LargeInteger operator+(LargeInteger lhs, ull rhs)
@@ -258,10 +288,14 @@ LargeInteger sqrt_ceil(const LargeInteger& inp)
     LargeInteger lo(0);
     LargeInteger hi;
     hi.n[maxn / 2] = 1;
-    while (lo + 1 < hi) { auto mid = (lo + hi) >> 1; inp <= mid * mid ? hi = mid : lo = mid; }
+    while (lo + 1 < hi) {
+        auto mid = (lo + hi) >> 1;
+        inp <= mid * mid ? hi = mid : lo = mid;
+    }
     return hi;
 }
 
+/*
 pair<LargeInteger, unsigned> unsigned_div_mod(LargeInteger inp, unsigned d)
 {
     unsigned i, j, e;
@@ -274,7 +308,7 @@ pair<LargeInteger, unsigned> unsigned_div_mod(LargeInteger inp, unsigned d)
     for (j -= e; ~j; j--) {
         unsigned low = j & 63;
         unsigned idx = j >> 6;
-        if (low < 32) {
+        if (low <= 32) {
             unsigned p = inp.n[idx] >> low;
             if (d <= p) {
                 ret.n[idx] |= 1ULL << j;
@@ -288,6 +322,41 @@ pair<LargeInteger, unsigned> unsigned_div_mod(LargeInteger inp, unsigned d)
                 p -= d;
                 inp.n[idx] = inp.n[idx] & ((1ULL << low) - 1) | (ull)p << low;
                 inp.n[idx + 1] = inp.n[idx + 1] & ~((1ULL << low - 32) - 1) | p >> (64 - low);
+            }
+        }
+    }
+    return {ret, inp.n[0]};
+}
+*/
+
+pair<LargeInteger, unsigned> unsigned_div_mod_v2(LargeInteger inp, unsigned d)
+{
+    unsigned i, j, e;
+    ull t;
+    LargeInteger ret;
+    for (i = maxn - 1; !inp.n[i] && i; i--);
+    for (j = i << 6, t = inp.n[i] >> 1; t; j++, t >>= 1);
+    for (e = 0; d >= 1 << e + 1; e++);
+    if (j < e) return {0, inp.n[0]};
+    for (j -= e; ~j; j--) {
+        unsigned low = j & 63;
+        unsigned idx = j >> 6;
+        if (low <= 32) {
+            unsigned p = inp.n[idx] >> low;
+            if (d <= p) {
+                ret.n[idx] |= 1ULL << j;
+                inp.n[idx] -= (ull)d << low;
+            }
+        }
+        else {
+            unsigned p = (unsigned)inp.n[idx + 1] << (64 - low) | inp.n[idx] >> low;
+            if (d <= p) {
+                ret.n[idx] |= 1ULL << j;
+                ull lst = inp.n[idx];
+                inp.n[idx] -= (ull)d << low;
+                if (lst < inp.n[idx])
+                    inp.n[idx + 1] -= (d >> (64 - low)) + 1;
+                else inp.n[idx + 1] -= d >> (64 - low);
             }
         }
     }
@@ -312,11 +381,13 @@ void init_primes(unsigned bound)
     }
 }
 
-bool  is_b_smooth(LargeInteger inp)
+bool is_b_smooth(LargeInteger inp)
 {
-    for (unsigned i = 0; i < primes.size(); i++) {
+    if (inp.is_zero()) return true;
+    while (!(inp.n[0] & 1)) inp >>= 1;
+    for (unsigned i = 1; i < primes.size(); i++) {
         for ( ; ; ) {
-            auto ret = unsigned_div_mod(inp, primes[i]);
+            auto ret = unsigned_div_mod_v2(inp, primes[i]);
             if (ret.second == 0) inp = ret.first;
             else break;
         }
@@ -362,8 +433,10 @@ void dixon_factorize(const LargeInteger& inp, unsigned num_threads)
 
 int main()
 {
-    cout << thread::hardware_concurrency() << endl;
+    auto t1 = chrono::high_resolution_clock::now();
     dixon_factorize(string("123434478345458574"), 1);
+    auto t2 = chrono::high_resolution_clock::now();
+    cout << chrono::duration_cast<chrono::microseconds>(t2 - t1).count() << endl;
     return 0;
 }
 
