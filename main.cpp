@@ -3,6 +3,8 @@
 #include <cstring>
 #include <vector>
 #include <cassert>
+#include <thread>
+#include <mutex>
 
 using namespace std;
 
@@ -256,10 +258,7 @@ LargeInteger sqrt_ceil(const LargeInteger& inp)
     LargeInteger lo(0);
     LargeInteger hi;
     hi.n[maxn / 2] = 1;
-    while (lo + 1 < hi) {
-        auto mid = (lo + hi) >> 1;
-        inp <= mid * mid ? hi = mid : lo = mid;
-    }
+    while (lo + 1 < hi) { auto mid = (lo + hi) >> 1; inp <= mid * mid ? hi = mid : lo = mid; }
     return hi;
 }
 
@@ -313,52 +312,58 @@ void init_primes(unsigned bound)
     }
 }
 
-pair<bool, vector<unsigned>> is_b_smooth(LargeInteger inp)
+bool  is_b_smooth(LargeInteger inp)
 {
-    vector<unsigned> fac(primes.size(), 0);
     for (unsigned i = 0; i < primes.size(); i++) {
         for ( ; ; ) {
             auto ret = unsigned_div_mod(inp, primes[i]);
-            if (ret.second == 0) {
-                fac[i]++;
-                inp = ret.first;
-            }
+            if (ret.second == 0) inp = ret.first;
             else break;
         }
     }
     for (unsigned i = 1; i < maxn; i++)
-        if (inp.n[i]) return {false, {}};
-    if (inp.n[0] != 1) return {false, {}};
-    return {true, fac};
+        if (inp.n[i]) return false;
+    if (inp.n[0] != 1) return false;
+    return true;
 }
 
 /*
  * input is guaranteed to be coprime and return a pair of <a, b> that a*b = input
  */
-pair<LargeInteger, LargeInteger> factorize(const LargeInteger& inp)
+
+mutex mtx_gen;
+vector<LargeInteger> generators;
+
+void worker(const LargeInteger& inp, unsigned my_thread, unsigned tot_threads)
 {
-    cout << "trying to find generators of " << inp << endl;
+    LargeInteger cnt = sqrt_ceil(inp) + my_thread;
+
+    while (generators.size() < primes.size() + 1) {
+        LargeInteger mod = cnt * cnt % inp;
+        if (is_b_smooth(mod)) {
+            scoped_lock lck(mtx_gen);
+            generators.push_back(mod);
+        }
+        cnt += tot_threads;
+    }
+}
+
+void dixon_factorize(const LargeInteger& inp, unsigned num_threads)
+{
     unsigned bound = inp.get_dixon_bound();
     init_primes(bound);
-    cout << "bound: " << bound << " prime size: " << primes.size() << endl;
+    generators.reserve(primes.size() + 1);
 
-    auto cnt = sqrt_ceil(inp);
-    cout << "starting from " << cnt << endl;
-    vector<LargeInteger> generators;
-    while (generators.size() < primes.size() + 1) {
-        auto mod = cnt * cnt % inp;
-        auto ret = is_b_smooth(mod);
-        if (ret.first) {
-            generators.push_back(cnt);
-            cout << cnt << ' ' << mod << endl;
-        }
-        cnt += 1;
-    }
+    vector<thread> threads(num_threads);
+    for (unsigned i = 0; i < num_threads; i++)
+        threads[i] = thread(worker, cref(inp), i, num_threads);
+    for (auto& thd : threads) thd.join();
 }
 
 int main()
 {
-    factorize(string("12343447348345475845748574"));
+    cout << thread::hardware_concurrency() << endl;
+    dixon_factorize(string("123434478345458574"), 1);
     return 0;
 }
 
